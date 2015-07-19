@@ -1,0 +1,9 @@
+{
+  "name": "angular2-build",
+  "version": "2.0.0-alpha.31",
+  "main": "./angular2.dev.js",
+  "ignore": [
+    "Makefile"
+  ],
+  "dependencies": {}
+}
