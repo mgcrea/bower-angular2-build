@@ -1,6 +1,6 @@
 {
   "name": "angular2-build",
-  "version": "2.0.0-alpha.31",
+  "version": "2.0.0-alpha.32",
   "branchPattern": "2.0.*",
   "ignore": [
     "Makefile"

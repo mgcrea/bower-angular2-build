@@ -362,6 +362,124 @@ System.register("angular2/src/mock/ng_zone_mock", ["angular2/src/core/zone/ng_zo
   };
 });
 
+System.register("angular2/src/test_lib/utils", ["angular2/src/facade/collection", "angular2/src/dom/dom_adapter", "angular2/src/facade/lang"], function($__export) {
+  "use strict";
+  var __moduleName = "angular2/src/test_lib/utils";
+  var ListWrapper,
+      MapWrapper,
+      DOM,
+      isString,
+      RegExpWrapper,
+      StringWrapper,
+      Log,
+      _RE_SPECIAL_CHARS,
+      _ESCAPE_RE,
+      _singleTagWhitelist;
+  function dispatchEvent(element, eventType) {
+    DOM.dispatchEvent(element, DOM.createEvent(eventType));
+  }
+  function el(html) {
+    return DOM.firstChild(DOM.content(DOM.createTemplate(html)));
+  }
+  function containsRegexp(input) {
+    return RegExpWrapper.create(StringWrapper.replaceAllMapped(input, _ESCAPE_RE, (function(match) {
+      return ("\\" + match[0]);
+    })));
+  }
+  function normalizeCSS(css) {
+    css = StringWrapper.replaceAll(css, /\s+/g, ' ');
+    css = StringWrapper.replaceAll(css, /:\s/g, ':');
+    css = StringWrapper.replaceAll(css, /'"/g, '"');
+    css = StringWrapper.replaceAllMapped(css, /url\(\"(.+)\\"\)/g, (function(match) {
+      return ("url(" + match[1] + ")");
+    }));
+    css = StringWrapper.replaceAllMapped(css, /\[(.+)=([^"\]]+)\]/g, (function(match) {
+      return ("[" + match[1] + "=\"" + match[2] + "\"]");
+    }));
+    return css;
+  }
+  function stringifyElement(el) {
+    var result = '';
+    if (DOM.isElementNode(el)) {
+      var tagName = StringWrapper.toLowerCase(DOM.tagName(el));
+      result += ("<" + tagName);
+      var attributeMap = DOM.attributeMap(el);
+      var keys = [];
+      MapWrapper.forEach(attributeMap, (function(v, k) {
+        keys.push(k);
+      }));
+      ListWrapper.sort(keys);
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var attValue = attributeMap.get(key);
+        if (!isString(attValue)) {
+          result += (" " + key);
+        } else {
+          result += (" " + key + "=\"" + attValue + "\"");
+        }
+      }
+      result += '>';
+      var children = DOM.childNodes(DOM.templateAwareRoot(el));
+      for (var j = 0; j < children.length; j++) {
+        result += stringifyElement(children[j]);
+      }
+      if (!ListWrapper.contains(_singleTagWhitelist, tagName)) {
+        result += ("</" + tagName + ">");
+      }
+    } else {
+      result += DOM.getText(el);
+    }
+    return result;
+  }
+  $__export("dispatchEvent", dispatchEvent);
+  $__export("el", el);
+  $__export("containsRegexp", containsRegexp);
+  $__export("normalizeCSS", normalizeCSS);
+  $__export("stringifyElement", stringifyElement);
+  return {
+    setters: [function($__m) {
+      ListWrapper = $__m.ListWrapper;
+      MapWrapper = $__m.MapWrapper;
+    }, function($__m) {
+      DOM = $__m.DOM;
+    }, function($__m) {
+      isString = $__m.isString;
+      RegExpWrapper = $__m.RegExpWrapper;
+      StringWrapper = $__m.StringWrapper;
+    }],
+    execute: function() {
+      Log = (function() {
+        function Log() {
+          this._result = [];
+        }
+        return ($traceurRuntime.createClass)(Log, {
+          add: function(value) {
+            this._result.push(value);
+          },
+          fn: function(value) {
+            var $__0 = this;
+            return (function() {
+              var a1 = arguments[0] !== (void 0) ? arguments[0] : null;
+              var a2 = arguments[1] !== (void 0) ? arguments[1] : null;
+              var a3 = arguments[2] !== (void 0) ? arguments[2] : null;
+              var a4 = arguments[3] !== (void 0) ? arguments[3] : null;
+              var a5 = arguments[4] !== (void 0) ? arguments[4] : null;
+              $__0._result.push(value);
+            });
+          },
+          result: function() {
+            return ListWrapper.join(this._result, "; ");
+          }
+        }, {});
+      }());
+      $__export("Log", Log);
+      _RE_SPECIAL_CHARS = ['-', '[', ']', '/', '{', '}', '\\', '(', ')', '*', '+', '?', '.', '^', '$', '|'];
+      _ESCAPE_RE = RegExpWrapper.create(("[\\" + _RE_SPECIAL_CHARS.join('\\') + "]"));
+      _singleTagWhitelist = ['br', 'hr', 'input'];
+    }
+  };
+});
+
 System.register("angular2/src/debug/debug_element", ["angular2/src/facade/lang", "angular2/src/facade/collection", "angular2/src/dom/dom_adapter", "angular2/src/core/compiler/view_ref"], function($__export) {
   "use strict";
   var __moduleName = "angular2/src/debug/debug_element";
@@ -416,11 +534,10 @@ System.register("angular2/src/debug/debug_element", ["angular2/src/facade/lang",
             return this._elementInjector.getDirectiveAtIndex(directiveIndex);
           },
           get children() {
-            var thisElementBinder = this._parentView.proto.elementBinders[this._boundElementIndex];
-            return this._getChildElements(this._parentView, thisElementBinder.index);
+            return this._getChildElements(this._parentView, this._boundElementIndex);
           },
           get componentViewChildren() {
-            var shadowView = this._parentView.componentChildViews[this._boundElementIndex];
+            var shadowView = this._parentView.getNestedView(this._boundElementIndex);
             if (!isPresent(shadowView)) {
               return [];
             }
@@ -459,13 +576,13 @@ System.register("angular2/src/debug/debug_element", ["angular2/src/facade/lang",
             var els = [];
             var parentElementBinder = null;
             if (isPresent(parentBoundElementIndex)) {
-              parentElementBinder = view.proto.elementBinders[parentBoundElementIndex];
+              parentElementBinder = view.proto.elementBinders[parentBoundElementIndex - view.elementOffset];
             }
             for (var i = 0; i < view.proto.elementBinders.length; ++i) {
               var binder = view.proto.elementBinders[i];
               if (binder.parent == parentElementBinder) {
-                els.push(new DebugElement(view, i));
-                var views = view.viewContainers[i];
+                els.push(new DebugElement(view, view.elementOffset + i));
+                var views = view.viewContainers[view.elementOffset + i];
                 if (isPresent(views)) {
                   ListWrapper.forEach(views.views, (function(nextView) {
                     els = ListWrapper.concat(els, $__0._getChildElements(nextView, null));
@@ -523,7 +640,7 @@ System.register("angular2/src/debug/debug_element", ["angular2/src/facade/lang",
           },
           css: function(selector) {
             return (function(debugElement) {
-              return DOM.elementMatches(debugElement.nativeElement, selector);
+              return isPresent(debugElement.nativeElement) ? DOM.elementMatches(debugElement.nativeElement, selector) : false;
             });
           },
           directive: function(type) {
@@ -646,7 +763,8 @@ System.register("angular2/src/debug/debug_element_view_listener", ["angular2/src
           _allViewsById.set(viewId, view);
           _allIdsByView.set(view, viewId);
           for (var i = 0; i < view.elementRefs.length; i++) {
-            _setElementId(this._renderer.getNativeElementSync(view.elementRefs[i]), [viewId, i]);
+            var el = view.elementRefs[i];
+            _setElementId(this._renderer.getNativeElementSync(el), [viewId, i]);
           }
         },
         viewDestroyed: function(view) {
@@ -678,144 +796,6 @@ System.register("angular2/debug", ["angular2/src/debug/debug_element", "angular2
       $__export("ELEMENT_PROBE_CONFIG", $__m.ELEMENT_PROBE_CONFIG);
     }],
     execute: function() {}
-  };
-});
-
-System.register("angular2/src/test_lib/utils", ["angular2/src/facade/collection", "angular2/src/dom/dom_adapter", "angular2/src/facade/lang", "angular2/src/render/dom/view/view"], function($__export) {
-  "use strict";
-  var __moduleName = "angular2/src/test_lib/utils";
-  var ListWrapper,
-      MapWrapper,
-      DOM,
-      isPresent,
-      isString,
-      RegExpWrapper,
-      StringWrapper,
-      resolveInternalDomView,
-      Log,
-      _RE_SPECIAL_CHARS,
-      _ESCAPE_RE,
-      _singleTagWhitelist;
-  function viewRootNodes(view) {
-    return resolveInternalDomView(view.render).rootNodes;
-  }
-  function queryView(view, selector) {
-    var rootNodes = viewRootNodes(view);
-    for (var i = 0; i < rootNodes.length; ++i) {
-      var res = DOM.querySelector(rootNodes[i], selector);
-      if (isPresent(res)) {
-        return res;
-      }
-    }
-    return null;
-  }
-  function dispatchEvent(element, eventType) {
-    DOM.dispatchEvent(element, DOM.createEvent(eventType));
-  }
-  function el(html) {
-    return DOM.firstChild(DOM.content(DOM.createTemplate(html)));
-  }
-  function containsRegexp(input) {
-    return RegExpWrapper.create(StringWrapper.replaceAllMapped(input, _ESCAPE_RE, (function(match) {
-      return ("\\" + match[0]);
-    })));
-  }
-  function normalizeCSS(css) {
-    css = StringWrapper.replaceAll(css, /\s+/g, ' ');
-    css = StringWrapper.replaceAll(css, /:\s/g, ':');
-    css = StringWrapper.replaceAll(css, /'"/g, '"');
-    css = StringWrapper.replaceAllMapped(css, /url\(\"(.+)\\"\)/g, (function(match) {
-      return ("url(" + match[1] + ")");
-    }));
-    css = StringWrapper.replaceAllMapped(css, /\[(.+)=([^"\]]+)\]/g, (function(match) {
-      return ("[" + match[1] + "=\"" + match[2] + "\"]");
-    }));
-    return css;
-  }
-  function stringifyElement(el) {
-    var result = '';
-    if (DOM.isElementNode(el)) {
-      var tagName = StringWrapper.toLowerCase(DOM.tagName(el));
-      result += ("<" + tagName);
-      var attributeMap = DOM.attributeMap(el);
-      var keys = [];
-      MapWrapper.forEach(attributeMap, (function(v, k) {
-        keys.push(k);
-      }));
-      ListWrapper.sort(keys);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        var attValue = attributeMap.get(key);
-        if (!isString(attValue)) {
-          result += (" " + key);
-        } else {
-          result += (" " + key + "=\"" + attValue + "\"");
-        }
-      }
-      result += '>';
-      var children = DOM.childNodes(DOM.templateAwareRoot(el));
-      for (var j = 0; j < children.length; j++) {
-        result += stringifyElement(children[j]);
-      }
-      if (!ListWrapper.contains(_singleTagWhitelist, tagName)) {
-        result += ("</" + tagName + ">");
-      }
-    } else {
-      result += DOM.getText(el);
-    }
-    return result;
-  }
-  $__export("viewRootNodes", viewRootNodes);
-  $__export("queryView", queryView);
-  $__export("dispatchEvent", dispatchEvent);
-  $__export("el", el);
-  $__export("containsRegexp", containsRegexp);
-  $__export("normalizeCSS", normalizeCSS);
-  $__export("stringifyElement", stringifyElement);
-  return {
-    setters: [function($__m) {
-      ListWrapper = $__m.ListWrapper;
-      MapWrapper = $__m.MapWrapper;
-    }, function($__m) {
-      DOM = $__m.DOM;
-    }, function($__m) {
-      isPresent = $__m.isPresent;
-      isString = $__m.isString;
-      RegExpWrapper = $__m.RegExpWrapper;
-      StringWrapper = $__m.StringWrapper;
-    }, function($__m) {
-      resolveInternalDomView = $__m.resolveInternalDomView;
-    }],
-    execute: function() {
-      Log = (function() {
-        function Log() {
-          this._result = [];
-        }
-        return ($traceurRuntime.createClass)(Log, {
-          add: function(value) {
-            this._result.push(value);
-          },
-          fn: function(value) {
-            var $__0 = this;
-            return (function() {
-              var a1 = arguments[0] !== (void 0) ? arguments[0] : null;
-              var a2 = arguments[1] !== (void 0) ? arguments[1] : null;
-              var a3 = arguments[2] !== (void 0) ? arguments[2] : null;
-              var a4 = arguments[3] !== (void 0) ? arguments[3] : null;
-              var a5 = arguments[4] !== (void 0) ? arguments[4] : null;
-              $__0._result.push(value);
-            });
-          },
-          result: function() {
-            return ListWrapper.join(this._result, "; ");
-          }
-        }, {});
-      }());
-      $__export("Log", Log);
-      _RE_SPECIAL_CHARS = ['-', '[', ']', '/', '{', '}', '\\', '(', ')', '*', '+', '?', '.', '^', '$', '|'];
-      _ESCAPE_RE = RegExpWrapper.create(("[\\" + _RE_SPECIAL_CHARS.join('\\') + "]"));
-      _singleTagWhitelist = ['br', 'hr', 'input'];
-    }
   };
 });
 
@@ -963,7 +943,7 @@ System.register("angular2/src/test_lib/test_component_builder", ["angular2/di", 
   };
 });
 
-System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2/src/core/compiler/compiler", "angular2/src/reflection/reflection", "angular2/change_detection", "angular2/src/core/exception_handler", "angular2/src/render/dom/compiler/view_loader", "angular2/src/core/compiler/view_resolver", "angular2/src/core/compiler/directive_resolver", "angular2/src/core/compiler/dynamic_component_loader", "angular2/src/render/dom/shadow_dom/shadow_dom_strategy", "angular2/src/render/dom/shadow_dom/emulated_unscoped_shadow_dom_strategy", "angular2/src/render/xhr", "angular2/src/core/compiler/component_url_mapper", "angular2/src/services/url_resolver", "angular2/src/services/app_root_url", "angular2/src/render/dom/compiler/style_url_resolver", "angular2/src/render/dom/compiler/style_inliner", "angular2/src/core/zone/ng_zone", "angular2/src/dom/dom_adapter", "angular2/src/render/dom/events/event_manager", "angular2/src/mock/view_resolver_mock", "angular2/src/render/xhr_mock", "angular2/src/mock/mock_location_strategy", "angular2/src/router/location_strategy", "angular2/src/mock/ng_zone_mock", "angular2/src/test_lib/test_component_builder", "angular2/src/facade/collection", "angular2/src/facade/lang", "angular2/src/core/compiler/view_pool", "angular2/src/core/compiler/view_manager", "angular2/src/core/compiler/view_manager_utils", "angular2/debug", "angular2/src/core/compiler/proto_view_factory", "angular2/src/render/api", "angular2/src/render/dom/dom_renderer", "angular2/src/render/dom/compiler/compiler"], function($__export) {
+System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2/src/core/compiler/compiler", "angular2/src/reflection/reflection", "angular2/change_detection", "angular2/src/core/exception_handler", "angular2/src/render/dom/compiler/view_loader", "angular2/src/core/compiler/view_resolver", "angular2/src/core/compiler/directive_resolver", "angular2/src/core/compiler/dynamic_component_loader", "angular2/src/render/dom/shadow_dom/shadow_dom_strategy", "angular2/src/render/dom/shadow_dom/emulated_unscoped_shadow_dom_strategy", "angular2/src/render/xhr", "angular2/src/core/compiler/component_url_mapper", "angular2/src/services/url_resolver", "angular2/src/services/app_root_url", "angular2/src/render/dom/compiler/style_url_resolver", "angular2/src/render/dom/compiler/style_inliner", "angular2/src/core/zone/ng_zone", "angular2/src/dom/dom_adapter", "angular2/src/render/dom/events/event_manager", "angular2/src/mock/view_resolver_mock", "angular2/src/render/xhr_mock", "angular2/src/mock/mock_location_strategy", "angular2/src/router/location_strategy", "angular2/src/mock/ng_zone_mock", "angular2/src/test_lib/test_component_builder", "angular2/src/facade/collection", "angular2/src/facade/lang", "angular2/src/core/compiler/view_pool", "angular2/src/core/compiler/view_manager", "angular2/src/core/compiler/view_manager_utils", "angular2/debug", "angular2/src/core/compiler/proto_view_factory", "angular2/src/render/api", "angular2/src/render/dom/dom_renderer", "angular2/src/render/dom/compiler/compiler", "angular2/src/test_lib/utils"], function($__export) {
   "use strict";
   var __moduleName = "angular2/src/test_lib/test_injector";
   var bind,
@@ -1013,7 +993,9 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
       Renderer,
       DomRenderer,
       DOCUMENT_TOKEN,
+      DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES,
       DefaultDomCompiler,
+      Log,
       FunctionWithParamTokens;
   function _getRootBindings() {
     return [bind(Reflector).toValue(reflector)];
@@ -1027,7 +1009,7 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
     }
     return [bind(DOCUMENT_TOKEN).toValue(appDoc), bind(ShadowDomStrategy).toFactory((function(doc) {
       return new EmulatedUnscopedShadowDomStrategy(doc.head);
-    }), [DOCUMENT_TOKEN]), DomRenderer, DefaultDomCompiler, bind(Renderer).toAlias(DomRenderer), bind(RenderCompiler).toAlias(DefaultDomCompiler), ProtoViewFactory, AppViewPool, AppViewManager, AppViewManagerUtils, ELEMENT_PROBE_CONFIG, bind(APP_VIEW_POOL_CAPACITY).toValue(500), Compiler, CompilerCache, bind(ViewResolver).toClass(MockViewResolver), bind(Pipes).toValue(defaultPipes), bind(ChangeDetection).toClass(DynamicChangeDetection), ViewLoader, DynamicComponentLoader, DirectiveResolver, Parser, Lexer, ExceptionHandler, bind(LocationStrategy).toClass(MockLocationStrategy), bind(XHR).toClass(MockXHR), ComponentUrlMapper, UrlResolver, AppRootUrl, StyleUrlResolver, StyleInliner, TestComponentBuilder, bind(NgZone).toClass(MockNgZone), bind(EventManager).toFactory((function(zone) {
+    }), [DOCUMENT_TOKEN]), DomRenderer, DefaultDomCompiler, bind(DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES).toValue(false), bind(Renderer).toAlias(DomRenderer), bind(RenderCompiler).toAlias(DefaultDomCompiler), ProtoViewFactory, AppViewPool, AppViewManager, AppViewManagerUtils, ELEMENT_PROBE_CONFIG, bind(APP_VIEW_POOL_CAPACITY).toValue(500), Compiler, CompilerCache, bind(ViewResolver).toClass(MockViewResolver), bind(Pipes).toValue(defaultPipes), Log, bind(ChangeDetection).toClass(DynamicChangeDetection), ViewLoader, DynamicComponentLoader, DirectiveResolver, Parser, Lexer, ExceptionHandler, bind(LocationStrategy).toClass(MockLocationStrategy), bind(XHR).toClass(MockXHR), ComponentUrlMapper, UrlResolver, AppRootUrl, StyleUrlResolver, StyleInliner, TestComponentBuilder, bind(NgZone).toClass(MockNgZone), bind(EventManager).toFactory((function(zone) {
       var plugins = [new DomEventsPlugin()];
       return new EventManager(plugins, zone);
     }), [NgZone])];
@@ -1124,8 +1106,11 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
     }, function($__m) {
       DomRenderer = $__m.DomRenderer;
       DOCUMENT_TOKEN = $__m.DOCUMENT_TOKEN;
+      DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES = $__m.DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES;
     }, function($__m) {
       DefaultDomCompiler = $__m.DefaultDomCompiler;
+    }, function($__m) {
+      Log = $__m.Log;
     }],
     execute: function() {
       FunctionWithParamTokens = (function() {
@@ -1137,7 +1122,7 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
             var params = ListWrapper.map(this._tokens, (function(t) {
               return injector.get(t);
             }));
-            FunctionWrapper.apply(this._fn, params);
+            return FunctionWrapper.apply(this._fn, params);
           }}, {});
       }());
       $__export("FunctionWithParamTokens", FunctionWithParamTokens);
@@ -1464,6 +1449,7 @@ System.register("angular2/src/test_lib/test_lib", ["angular2/src/dom/dom_adapter
             var newSpy = jasmine.createSpy(name);
             newSpy.andCallFake = newSpy.and.callFake;
             newSpy.andReturn = newSpy.and.returnValue;
+            newSpy.reset = newSpy.calls.reset;
             newSpy.and.returnValue(null);
             return newSpy;
           }
