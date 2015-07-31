@@ -95,10 +95,12 @@ System.register("angular2/src/router/instruction", ["angular2/src/facade/collect
       Instruction = (function() {
         function Instruction(component, capturedUrl, _recognizer) {
           var child = arguments[3] !== (void 0) ? arguments[3] : null;
+          var _params = arguments[4] !== (void 0) ? arguments[4] : null;
           this.component = component;
           this.capturedUrl = capturedUrl;
           this._recognizer = _recognizer;
           this.child = child;
+          this._params = _params;
           this.reuse = false;
           this.accumulatedUrl = capturedUrl;
           this.specificity = _recognizer.specificity;
@@ -184,6 +186,34 @@ System.register("angular2/src/router/location_strategy", ["angular2/src/facade/l
         }, {});
       }());
       $__export("LocationStrategy", LocationStrategy);
+    }
+  };
+});
+
+System.register("angular2/src/router/helpers", ["angular2/src/facade/lang"], function($__export) {
+  "use strict";
+  var __moduleName = "angular2/src/router/helpers";
+  var isPresent;
+  function parseAndAssignParamString(splitToken, paramString, keyValueMap) {
+    var first = paramString[0];
+    if (first == '?' || first == ';') {
+      paramString = paramString.substring(1);
+    }
+    paramString.split(splitToken).forEach((function(entry) {
+      var tuple = entry.split('=');
+      var key = tuple[0];
+      if (!isPresent(keyValueMap[key])) {
+        var value = tuple.length > 1 ? tuple[1] : true;
+        keyValueMap[key] = value;
+      }
+    }));
+  }
+  $__export("parseAndAssignParamString", parseAndAssignParamString);
+  return {
+    setters: [function($__m) {
+      isPresent = $__m.isPresent;
+    }],
+    execute: function() {
     }
   };
 });
@@ -718,7 +748,7 @@ System.register("angular2/src/router/location", ["angular2/src/router/location_s
   };
 });
 
-System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lang", "angular2/src/facade/collection", "angular2/src/router/url"], function($__export) {
+System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lang", "angular2/src/facade/collection", "angular2/src/router/helpers", "angular2/src/router/url"], function($__export) {
   "use strict";
   var __moduleName = "angular2/src/router/path_recognizer";
   var __decorate,
@@ -731,6 +761,7 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
       StringMapWrapper,
       ListWrapper,
       IMPLEMENTS,
+      parseAndAssignParamString,
       escapeRegex,
       Segment,
       TouchMap,
@@ -748,17 +779,6 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
     } else {
       return obj.toString();
     }
-  }
-  function parseAndAssignMatrixParams(keyValueMap, matrixString) {
-    if (matrixString[0] == ';') {
-      matrixString = matrixString.substring(1);
-    }
-    matrixString.split(';').forEach((function(entry) {
-      var tuple = entry.split('=');
-      var key = tuple[0];
-      var value = tuple.length > 1 ? tuple[1] : true;
-      keyValueMap[key] = value;
-    }));
   }
   function parsePathString(route) {
     if (StringWrapper.startsWith(route, "/")) {
@@ -817,6 +837,8 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
     }, function($__m) {
       StringMapWrapper = $__m.StringMapWrapper;
       ListWrapper = $__m.ListWrapper;
+    }, function($__m) {
+      parseAndAssignParamString = $__m.parseAndAssignParamString;
     }, function($__m) {
       escapeRegex = $__m.escapeRegex;
     }],
@@ -920,9 +942,11 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
       RESERVED_CHARS = RegExpWrapper.create('//|\\(|\\)|;|\\?|=');
       PathRecognizer = (function() {
         function PathRecognizer(path, handler) {
+          var isRoot = arguments[2] !== (void 0) ? arguments[2] : false;
           var $__0 = this;
           this.path = path;
           this.handler = handler;
+          this.isRoot = isRoot;
           this.terminal = true;
           assertPath(path);
           var parsed = parsePathString(path);
@@ -947,14 +971,15 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
           parseParams: function(url) {
             var segmentsLimit = this.segments.length - 1;
             var containsStarSegment = segmentsLimit >= 0 && this.segments[segmentsLimit] instanceof StarSegment;
-            var matrixString;
+            var paramsString,
+                useQueryString = this.isRoot && this.terminal;
             if (!containsStarSegment) {
-              var matches = RegExpWrapper.firstMatch(RegExpWrapper.create('^(.*\/[^\/]+?)(;[^\/]+)?\/?$'), url);
+              var matches = RegExpWrapper.firstMatch(useQueryString ? PathRecognizer.queryRegex : PathRecognizer.matrixRegex, url);
               if (isPresent(matches)) {
                 url = matches[1];
-                matrixString = matches[2];
+                paramsString = matches[2];
               }
-              url = StringWrapper.replaceAll(url, /(;[^\/]+)(?=(\/|\Z))/g, '');
+              url = StringWrapper.replaceAll(url, /(;[^\/]+)(?=(\/|$))/g, '');
             }
             var params = StringMapWrapper.create();
             var urlPart = url;
@@ -969,14 +994,18 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
                 params[segment.name] = match[1];
               }
             }
-            if (isPresent(matrixString) && matrixString.length > 0 && matrixString[0] == ';') {
-              parseAndAssignMatrixParams(params, matrixString);
+            if (isPresent(paramsString) && paramsString.length > 0) {
+              var expectedStartingValue = useQueryString ? '?' : ';';
+              if (paramsString[0] == expectedStartingValue) {
+                parseAndAssignParamString(expectedStartingValue, paramsString, params);
+              }
             }
             return params;
           },
           generate: function(params) {
             var paramTokens = new TouchMap(params);
             var applyLeadingSlash = false;
+            var useQueryString = this.isRoot && this.terminal;
             var url = '';
             for (var i = 0; i < this.segments.length; i++) {
               var segment = this.segments[i];
@@ -987,12 +1016,23 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
               }
             }
             var unusedParams = paramTokens.getUnused();
-            StringMapWrapper.forEach(unusedParams, (function(value, key) {
-              url += ';' + key;
-              if (isPresent(value)) {
-                url += '=' + value;
-              }
-            }));
+            if (!StringMapWrapper.isEmpty(unusedParams)) {
+              url += useQueryString ? '?' : ';';
+              var paramToken = useQueryString ? '&' : ';';
+              var i = 0;
+              StringMapWrapper.forEach(unusedParams, (function(value, key) {
+                if (i++ > 0) {
+                  url += paramToken;
+                }
+                url += key;
+                if (!isPresent(value) && useQueryString) {
+                  value = 'true';
+                }
+                if (isPresent(value)) {
+                  url += '=' + value;
+                }
+              }));
+            }
             if (applyLeadingSlash) {
               url += '/';
             }
@@ -1004,6 +1044,8 @@ System.register("angular2/src/router/path_recognizer", ["angular2/src/facade/lan
         }, {});
       }());
       $__export("PathRecognizer", PathRecognizer);
+      PathRecognizer.matrixRegex = RegExpWrapper.create('^(.*\/[^\/]+?)(;[^\/]+)?\/?$');
+      PathRecognizer.queryRegex = RegExpWrapper.create('^(.*\/[^\/]+?)(\\?[^\/]+)?$');
     }
   };
 });
@@ -1168,7 +1210,7 @@ System.register("angular2/src/router/router_link", ["angular2/src/core/annotatio
   };
 });
 
-System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/lang", "angular2/src/facade/collection", "angular2/src/router/path_recognizer", "angular2/src/router/route_config_impl", "angular2/src/router/async_route_handler", "angular2/src/router/sync_route_handler"], function($__export) {
+System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/lang", "angular2/src/facade/collection", "angular2/src/router/path_recognizer", "angular2/src/router/route_config_impl", "angular2/src/router/async_route_handler", "angular2/src/router/sync_route_handler", "angular2/src/router/helpers"], function($__export) {
   "use strict";
   var __moduleName = "angular2/src/router/route_recognizer";
   var RegExpWrapper,
@@ -1179,12 +1221,14 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
       BaseException,
       Map,
       MapWrapper,
+      StringMapWrapper,
       PathRecognizer,
       Route,
       AsyncRoute,
       Redirect,
       AsyncRouteHandler,
       SyncRouteHandler,
+      parseAndAssignParamString,
       RouteRecognizer,
       RouteMatch;
   function configObjToHandler(config) {
@@ -1216,6 +1260,7 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
     }, function($__m) {
       Map = $__m.Map;
       MapWrapper = $__m.MapWrapper;
+      StringMapWrapper = $__m.StringMapWrapper;
     }, function($__m) {
       PathRecognizer = $__m.PathRecognizer;
     }, function($__m) {
@@ -1226,10 +1271,14 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
       AsyncRouteHandler = $__m.AsyncRouteHandler;
     }, function($__m) {
       SyncRouteHandler = $__m.SyncRouteHandler;
+    }, function($__m) {
+      parseAndAssignParamString = $__m.parseAndAssignParamString;
     }],
     execute: function() {
       RouteRecognizer = (function() {
         function RouteRecognizer() {
+          var isRoot = arguments[0] !== (void 0) ? arguments[0] : false;
+          this.isRoot = isRoot;
           this.names = new Map();
           this.redirects = new Map();
           this.matchers = new Map();
@@ -1246,7 +1295,7 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
             } else if (config instanceof AsyncRoute) {
               handler = new AsyncRouteHandler(config.loader);
             }
-            var recognizer = new PathRecognizer(config.path, handler);
+            var recognizer = new PathRecognizer(config.path, handler, this.isRoot);
             MapWrapper.forEach(this.matchers, (function(matcher, _) {
               if (recognizer.regex.toString() == matcher.regex.toString()) {
                 throw new BaseException(("Configuration '" + config.path + "' conflicts with existing route '" + matcher.path + "'"));
@@ -1272,6 +1321,16 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
                 url = target + url.substring(path.length);
               }
             }));
+            var queryParams = StringMapWrapper.create();
+            var queryString = '';
+            var queryIndex = url.indexOf('?');
+            if (queryIndex >= 0) {
+              queryString = url.substring(queryIndex + 1);
+              url = url.substring(0, queryIndex);
+            }
+            if (this.isRoot && queryString.length > 0) {
+              parseAndAssignParamString('&', queryString, queryParams);
+            }
             MapWrapper.forEach(this.matchers, (function(pathRecognizer, regex) {
               var match;
               if (isPresent(match = RegExpWrapper.firstMatch(regex, url))) {
@@ -1281,7 +1340,12 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
                   matchedUrl = match[0];
                   unmatchedUrl = url.substring(match[0].length);
                 }
-                solutions.push(new RouteMatch(pathRecognizer, matchedUrl, unmatchedUrl));
+                var params = null;
+                if (pathRecognizer.terminal && !StringMapWrapper.isEmpty(queryParams)) {
+                  params = queryParams;
+                  matchedUrl += '?' + queryString;
+                }
+                solutions.push(new RouteMatch(pathRecognizer, matchedUrl, unmatchedUrl, params));
               }
             }));
             return solutions;
@@ -1305,12 +1369,22 @@ System.register("angular2/src/router/route_recognizer", ["angular2/src/facade/la
       $__export("RouteRecognizer", RouteRecognizer);
       RouteMatch = (function() {
         function RouteMatch(recognizer, matchedUrl, unmatchedUrl) {
+          var p = arguments[3] !== (void 0) ? arguments[3] : null;
           this.recognizer = recognizer;
           this.matchedUrl = matchedUrl;
           this.unmatchedUrl = unmatchedUrl;
+          this._paramsParsed = false;
+          this._params = isPresent(p) ? p : StringMapWrapper.create();
         }
         return ($traceurRuntime.createClass)(RouteMatch, {params: function() {
-            return this.recognizer.parseParams(this.matchedUrl);
+            var $__0 = this;
+            if (!this._paramsParsed) {
+              this._paramsParsed = true;
+              StringMapWrapper.forEach(this.recognizer.parseParams(this.matchedUrl), (function(value, key) {
+                StringMapWrapper.set($__0._params, key, value);
+              }));
+            }
+            return this._params;
           }}, {});
       }());
       $__export("RouteMatch", RouteMatch);
@@ -1410,7 +1484,7 @@ System.register("angular2/src/router/router", ["angular2/src/facade/async", "ang
           config: function(definitions) {
             var $__0 = this;
             definitions.forEach((function(routeDefinition) {
-              $__0.registry.config($__0.hostComponent, routeDefinition);
+              $__0.registry.config($__0.hostComponent, routeDefinition, $__0 instanceof RootRouter);
             }));
             return this.renavigate();
           },
@@ -1565,7 +1639,7 @@ System.register("angular2/src/router/router", ["angular2/src/facade/async", "ang
           this._location.subscribe(($__0 = this, function(change) {
             return $__0.navigate(change['url']);
           }));
-          this.registry.configFromComponent(hostComponent);
+          this.registry.configFromComponent(hostComponent, true);
           this.navigate(location.path());
         }
         return ($traceurRuntime.createClass)(RootRouter, {commit: function(instruction) {
@@ -1692,10 +1766,11 @@ System.register("angular2/src/router/route_registry", ["angular2/src/router/rout
         this._rules = new Map();
       }, {
         config: function(parentComponent, config) {
+          var isRootLevelRoute = arguments[2] !== (void 0) ? arguments[2] : false;
           config = normalizeRouteConfig(config);
           var recognizer = this._rules.get(parentComponent);
           if (isBlank(recognizer)) {
-            recognizer = new RouteRecognizer();
+            recognizer = new RouteRecognizer(isRootLevelRoute);
             this._rules.set(parentComponent, recognizer);
           }
           var terminal = recognizer.config(config);
@@ -1708,6 +1783,7 @@ System.register("angular2/src/router/route_registry", ["angular2/src/router/rout
           }
         },
         configFromComponent: function(component) {
+          var isRootComponent = arguments[1] !== (void 0) ? arguments[1] : false;
           var $__0 = this;
           if (!isType(component)) {
             return ;
@@ -1721,7 +1797,7 @@ System.register("angular2/src/router/route_registry", ["angular2/src/router/rout
               var annotation = annotations[i];
               if (annotation instanceof RouteConfig) {
                 ListWrapper.forEach(annotation.configs, (function(config) {
-                  return $__0.config(component, config);
+                  return $__0.config(component, config, isRootComponent);
                 }));
               }
             }
@@ -1755,7 +1831,7 @@ System.register("angular2/src/router/route_registry", ["angular2/src/router/rout
             $__0.configFromComponent(componentType);
             if (partialMatch.unmatchedUrl.length == 0) {
               if (recognizer.terminal) {
-                return new Instruction(componentType, partialMatch.matchedUrl, recognizer);
+                return new Instruction(componentType, partialMatch.matchedUrl, recognizer, null, partialMatch.params());
               } else {
                 return null;
               }
