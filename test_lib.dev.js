@@ -201,6 +201,13 @@ System.register("angular2/src/mock/mock_location_strategy", ["angular2/src/facad
           },
           getBaseHref: function() {
             return this.internalBaseHref;
+          },
+          back: function() {
+            if (this.urlChanges.length > 0) {
+              this.urlChanges.pop();
+              var nextUrl = this.urlChanges.length > 0 ? this.urlChanges[this.urlChanges.length - 1] : '';
+              this.simulatePopState(nextUrl);
+            }
           }
         }, {}, $__super);
       }(LocationStrategy));
@@ -389,7 +396,7 @@ System.register("angular2/src/test_lib/utils", ["angular2/src/facade/collection"
   function normalizeCSS(css) {
     css = StringWrapper.replaceAll(css, /\s+/g, ' ');
     css = StringWrapper.replaceAll(css, /:\s/g, ':');
-    css = StringWrapper.replaceAll(css, /'"/g, '"');
+    css = StringWrapper.replaceAll(css, /'/g, '"');
     css = StringWrapper.replaceAllMapped(css, /url\(\"(.+)\\"\)/g, (function(match) {
       return ("url(" + match[1] + ")");
     }));
@@ -426,6 +433,8 @@ System.register("angular2/src/test_lib/utils", ["angular2/src/facade/collection"
       if (!ListWrapper.contains(_singleTagWhitelist, tagName)) {
         result += ("</" + tagName + ">");
       }
+    } else if (DOM.isCommentNode(el)) {
+      result += ("<!--" + DOM.nodeValue(el) + "-->");
     } else {
       result += DOM.getText(el);
     }
@@ -971,18 +980,19 @@ System.register("angular2/src/web-workers/shared/render_view_with_fragments_stor
       RenderViewWithFragmentsStore = (($traceurRuntime.createClass)(function(onWebWorker) {
         this._nextIndex = 0;
         this._onWebWorker = onWebWorker;
-        if (!onWebWorker) {
-          this._lookupByIndex = new Map();
-          this._lookupByView = new Map();
-        }
+        this._lookupByIndex = new Map();
+        this._lookupByView = new Map();
       }, {
         allocate: function(fragmentCount) {
+          var initialIndex = this._nextIndex;
           var viewRef = new WorkerRenderViewRef(this._nextIndex++);
           var fragmentRefs = ListWrapper.createGrowableSize(fragmentCount);
           for (var i = 0; i < fragmentCount; i++) {
             fragmentRefs[i] = new WorkerRenderFragmentRef(this._nextIndex++);
           }
-          return new RenderViewWithFragments(viewRef, fragmentRefs);
+          var renderViewWithFragments = new RenderViewWithFragments(viewRef, fragmentRefs);
+          this.store(renderViewWithFragments, initialIndex);
+          return renderViewWithFragments;
         },
         store: function(view, startIndex) {
           var $__0 = this;
@@ -1011,21 +1021,13 @@ System.register("angular2/src/web-workers/shared/render_view_with_fragments_stor
           if (ref == null) {
             return null;
           }
-          if (this._onWebWorker) {
-            return WorkerRenderViewRef.deserialize(ref);
-          } else {
-            return this.retreive(ref);
-          }
+          return this.retreive(ref);
         },
         deserializeRenderFragmentRef: function(ref) {
           if (ref == null) {
             return null;
           }
-          if (this._onWebWorker) {
-            return WorkerRenderFragmentRef.deserialize(ref);
-          } else {
-            return this.retreive(ref);
-          }
+          return this.retreive(ref);
         },
         _serializeRenderFragmentOrViewRef: function(ref) {
           if (ref == null) {
@@ -1063,21 +1065,11 @@ System.register("angular2/src/web-workers/shared/render_view_with_fragments_stor
           if (obj == null) {
             return null;
           }
-          var viewRef;
-          var fragments;
-          if (this._onWebWorker) {
-            viewRef = WorkerRenderViewRef.deserialize(obj['viewRef']);
-            fragments = ListWrapper.map(obj['fragmentRefs'], (function(val) {
-              return WorkerRenderFragmentRef.deserialize(val);
-            }));
-            return new RenderViewWithFragments(viewRef, fragments);
-          } else {
-            viewRef = this.retreive(obj['viewRef']);
-            fragments = ListWrapper.map(obj['fragmentRefs'], (function(val) {
-              return $__0.retreive(val);
-            }));
-            return new RenderViewWithFragments(viewRef, fragments);
-          }
+          var viewRef = this.deserializeRenderViewRef(obj['viewRef']);
+          var fragments = ListWrapper.map(obj['fragmentRefs'], (function(val) {
+            return $__0.deserializeRenderFragmentRef(val);
+          }));
+          return new RenderViewWithFragments(viewRef, fragments);
         }
       }, {}));
       $__export("RenderViewWithFragmentsStore", RenderViewWithFragmentsStore);
@@ -1137,6 +1129,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
       isPresent,
       serializeEnum,
       deserializeEnum,
+      BaseException,
       List,
       ListWrapper,
       Map,
@@ -1154,6 +1147,8 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
       RenderViewRef,
       RenderFragmentRef,
       ViewType,
+      ViewEncapsulation,
+      PropertyBindingType,
       WorkerElementRef,
       ASTWithSource,
       Parser,
@@ -1167,6 +1162,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
       isPresent = $__m.isPresent;
       serializeEnum = $__m.serializeEnum;
       deserializeEnum = $__m.deserializeEnum;
+      BaseException = $__m.BaseException;
     }, function($__m) {
       List = $__m.List;
       ListWrapper = $__m.ListWrapper;
@@ -1186,6 +1182,8 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
       RenderViewRef = $__m.RenderViewRef;
       RenderFragmentRef = $__m.RenderFragmentRef;
       ViewType = $__m.ViewType;
+      ViewEncapsulation = $__m.ViewEncapsulation;
+      PropertyBindingType = $__m.PropertyBindingType;
     }, function($__m) {
       WorkerElementRef = $__m.WorkerElementRef;
     }, function($__m) {
@@ -1232,6 +1230,17 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
         viewTypeMap[1] = ViewType.COMPONENT;
         viewTypeMap[2] = ViewType.EMBEDDED;
         this._enumRegistry.set(ViewType, viewTypeMap);
+        var viewEncapsulationMap = new Map();
+        viewEncapsulationMap[0] = ViewEncapsulation.EMULATED;
+        viewEncapsulationMap[1] = ViewEncapsulation.NATIVE;
+        viewEncapsulationMap[2] = ViewEncapsulation.NONE;
+        this._enumRegistry.set(ViewEncapsulation, viewEncapsulationMap);
+        var propertyBindingTypeMap = new Map();
+        propertyBindingTypeMap[0] = PropertyBindingType.PROPERTY;
+        propertyBindingTypeMap[1] = PropertyBindingType.ATTRIBUTE;
+        propertyBindingTypeMap[2] = PropertyBindingType.CLASS;
+        propertyBindingTypeMap[3] = PropertyBindingType.STYLE;
+        this._enumRegistry.set(PropertyBindingType, propertyBindingTypeMap);
       }, {
         serialize: function(obj, type) {
           var $__0 = this;
@@ -1270,8 +1279,12 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
             return this._renderViewStore.serializeRenderFragmentRef(obj);
           } else if (type == WorkerElementRef) {
             return this._serializeWorkerElementRef(obj);
+          } else if (type == ElementPropertyBinding) {
+            return this._serializeElementPropertyBinding(obj);
+          } else if (type == EventBinding) {
+            return this._serializeEventBinding(obj);
           } else {
-            throw "No serializer for " + type.toString();
+            throw new BaseException("No serializer for " + type.toString());
           }
         },
         deserialize: function(map, type, data) {
@@ -1311,8 +1324,12 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
             return this._renderViewStore.deserializeRenderFragmentRef(map);
           } else if (type == WorkerElementRef) {
             return this._deserializeWorkerElementRef(map);
+          } else if (type == EventBinding) {
+            return this._deserializeEventBinding(map);
+          } else if (type == ElementPropertyBinding) {
+            return this._deserializeElementPropertyBinding(map);
           } else {
-            throw "No deserializer for " + type.toString();
+            throw new BaseException("No deserializer for " + type.toString());
           }
         },
         mapToObject: function(map, type) {
@@ -1332,7 +1349,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
           var $__0 = this;
           if (isPresent(type)) {
             var map = new Map();
-            StringMapWrapper.forEach(obj, (function(key, val) {
+            StringMapWrapper.forEach(obj, (function(val, key) {
               map.set(key, $__0.deserialize(val, type, data));
             }));
             return map;
@@ -1342,6 +1359,28 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
         },
         allocateRenderViews: function(fragmentCount) {
           this._renderViewStore.allocate(fragmentCount);
+        },
+        _serializeElementPropertyBinding: function(binding) {
+          return {
+            'type': serializeEnum(binding.type),
+            'astWithSource': this.serialize(binding.astWithSource, ASTWithSource),
+            'property': binding.property,
+            'unit': binding.unit
+          };
+        },
+        _deserializeElementPropertyBinding: function(map) {
+          var type = deserializeEnum(map['type'], this._enumRegistry.get(PropertyBindingType));
+          var ast = this.deserialize(map['astWithSource'], ASTWithSource, "binding");
+          return new ElementPropertyBinding(type, ast, map['property'], map['unit']);
+        },
+        _serializeEventBinding: function(binding) {
+          return {
+            'fullName': binding.fullName,
+            'source': this.serialize(binding.source, ASTWithSource)
+          };
+        },
+        _deserializeEventBinding: function(map) {
+          return new EventBinding(map['fullName'], this.deserialize(map['source'], ASTWithSource, "action"));
         },
         _serializeWorkerElementRef: function(elementRef) {
           return {
@@ -1375,14 +1414,11 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
         _deserializeASTWithSource: function(obj, data) {
           var ast;
           switch (data) {
-            case "interpolation":
-              ast = this._parser.parseInterpolation(obj['input'], obj['location']);
+            case "action":
+              ast = this._parser.parseAction(obj['input'], obj['location']);
               break;
             case "binding":
               ast = this._parser.parseBinding(obj['input'], obj['location']);
-              break;
-            case "simpleBinding":
-              ast = this._parser.parseSimpleBinding(obj['input'], obj['location']);
               break;
             case "interpolation":
               ast = this._parser.parseInterpolation(obj['input'], obj['location']);
@@ -1400,7 +1436,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
             'directives': this.serialize(view.directives, DirectiveMetadata),
             'styleAbsUrls': view.styleAbsUrls,
             'styles': view.styles,
-            'encapsulation': view.encapsulation
+            'encapsulation': serializeEnum(view.encapsulation)
           };
         },
         _deserializeViewDefinition: function(obj) {
@@ -1411,7 +1447,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
             directives: this.deserialize(obj['directives'], DirectiveMetadata),
             styleAbsUrls: obj['styleAbsUrls'],
             styles: obj['styles'],
-            encapsulation: obj['encapsulation']
+            encapsulation: deserializeEnum(obj['encapsulation'], this._enumRegistry.get(ViewEncapsulation))
           });
         },
         _serializeDirectiveBinder: function(binder) {
@@ -1473,7 +1509,7 @@ System.register("angular2/src/web-workers/shared/serializer", ["angular2/src/fac
             variableBindings: this.objectToMap(obj['variableBindings']),
             textBindings: this.deserialize(obj['textBindings'], ASTWithSource, "interpolation"),
             type: deserializeEnum(obj['type'], this._enumRegistry.get(ViewType)),
-            transitiveNgContentCount: obj['transitivengContentCount']
+            transitiveNgContentCount: obj['transitiveNgContentCount']
           });
         },
         _serializeDirectiveMetadata: function(meta) {
@@ -1672,7 +1708,7 @@ System.register("angular2/src/test_lib/test_component_builder", ["angular2/di", 
   };
 });
 
-System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2/src/core/compiler/compiler", "angular2/src/reflection/reflection", "angular2/src/change_detection/change_detection", "angular2/src/core/exception_handler", "angular2/src/render/dom/compiler/view_loader", "angular2/src/core/compiler/view_resolver", "angular2/src/core/compiler/directive_resolver", "angular2/src/core/compiler/dynamic_component_loader", "angular2/src/render/xhr", "angular2/src/core/compiler/component_url_mapper", "angular2/src/services/url_resolver", "angular2/src/services/app_root_url", "angular2/src/services/anchor_based_app_root_url", "angular2/src/render/dom/compiler/style_url_resolver", "angular2/src/render/dom/compiler/style_inliner", "angular2/src/core/zone/ng_zone", "angular2/src/dom/dom_adapter", "angular2/src/render/dom/events/event_manager", "angular2/src/mock/view_resolver_mock", "angular2/src/render/xhr_mock", "angular2/src/mock/mock_location_strategy", "angular2/src/router/location_strategy", "angular2/src/mock/ng_zone_mock", "angular2/src/test_lib/test_component_builder", "angular2/src/facade/collection", "angular2/src/facade/lang", "angular2/src/core/compiler/view_pool", "angular2/src/core/compiler/view_manager", "angular2/src/core/compiler/view_manager_utils", "angular2/debug", "angular2/src/core/compiler/proto_view_factory", "angular2/src/render/api", "angular2/src/render/render", "angular2/src/web-workers/shared/serializer", "angular2/src/test_lib/utils"], function($__export) {
+System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2/src/core/compiler/compiler", "angular2/src/reflection/reflection", "angular2/src/change_detection/change_detection", "angular2/src/core/exception_handler", "angular2/src/render/dom/compiler/view_loader", "angular2/src/core/compiler/view_resolver", "angular2/src/core/compiler/directive_resolver", "angular2/src/core/compiler/dynamic_component_loader", "angular2/src/render/xhr", "angular2/src/core/compiler/component_url_mapper", "angular2/src/services/url_resolver", "angular2/src/services/app_root_url", "angular2/src/services/anchor_based_app_root_url", "angular2/src/render/dom/compiler/style_url_resolver", "angular2/src/render/dom/compiler/style_inliner", "angular2/src/core/zone/ng_zone", "angular2/src/dom/dom_adapter", "angular2/src/render/dom/events/event_manager", "angular2/src/mock/view_resolver_mock", "angular2/src/render/xhr_mock", "angular2/src/mock/mock_location_strategy", "angular2/src/router/location_strategy", "angular2/src/mock/ng_zone_mock", "angular2/src/test_lib/test_component_builder", "angular2/src/facade/collection", "angular2/src/facade/lang", "angular2/src/core/compiler/view_pool", "angular2/src/core/compiler/view_manager", "angular2/src/core/compiler/view_manager_utils", "angular2/debug", "angular2/src/core/compiler/proto_view_factory", "angular2/src/render/api", "angular2/src/render/render", "angular2/src/render/dom/schema/element_schema_registry", "angular2/src/render/dom/schema/dom_element_schema_registry", "angular2/src/web-workers/shared/serializer", "angular2/src/test_lib/utils"], function($__export) {
   "use strict";
   var __moduleName = "angular2/src/test_lib/test_injector";
   var bind,
@@ -1686,6 +1722,10 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
       DynamicChangeDetection,
       Pipes,
       defaultPipes,
+      IterableDiffers,
+      defaultIterableDiffers,
+      KeyValueDiffers,
+      defaultKeyValueDiffers,
       ExceptionHandler,
       ViewLoader,
       ViewResolver,
@@ -1726,6 +1766,10 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
       APP_ID_TOKEN,
       SharedStylesHost,
       DomSharedStylesHost,
+      MAX_IN_MEMORY_ELEMENTS_PER_TEMPLATE_TOKEN,
+      TemplateCloner,
+      ElementSchemaRegistry,
+      DomElementSchemaRegistry,
       Serializer,
       Log,
       FunctionWithParamTokens;
@@ -1739,7 +1783,7 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
     } catch (e) {
       appDoc = null;
     }
-    return [bind(DOCUMENT_TOKEN).toValue(appDoc), DomRenderer, bind(Renderer).toAlias(DomRenderer), bind(APP_ID_TOKEN).toValue('a'), DefaultDomCompiler, bind(RenderCompiler).toAlias(DefaultDomCompiler), DomSharedStylesHost, bind(SharedStylesHost).toAlias(DomSharedStylesHost), bind(DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES).toValue(false), ProtoViewFactory, AppViewPool, AppViewManager, AppViewManagerUtils, Serializer, ELEMENT_PROBE_CONFIG, bind(APP_VIEW_POOL_CAPACITY).toValue(500), Compiler, CompilerCache, bind(ViewResolver).toClass(MockViewResolver), bind(Pipes).toValue(defaultPipes), Log, bind(ChangeDetection).toClass(DynamicChangeDetection), ViewLoader, DynamicComponentLoader, DirectiveResolver, Parser, Lexer, bind(ExceptionHandler).toValue(new ExceptionHandler(DOM)), bind(LocationStrategy).toClass(MockLocationStrategy), bind(XHR).toClass(MockXHR), ComponentUrlMapper, UrlResolver, AnchorBasedAppRootUrl, bind(AppRootUrl).toAlias(AnchorBasedAppRootUrl), StyleUrlResolver, StyleInliner, TestComponentBuilder, bind(NgZone).toClass(MockNgZone), bind(EventManager).toFactory((function(zone) {
+    return [bind(DOCUMENT_TOKEN).toValue(appDoc), DomRenderer, bind(Renderer).toAlias(DomRenderer), bind(APP_ID_TOKEN).toValue('a'), TemplateCloner, bind(MAX_IN_MEMORY_ELEMENTS_PER_TEMPLATE_TOKEN).toValue(-1), DefaultDomCompiler, bind(RenderCompiler).toAlias(DefaultDomCompiler), bind(ElementSchemaRegistry).toValue(new DomElementSchemaRegistry()), DomSharedStylesHost, bind(SharedStylesHost).toAlias(DomSharedStylesHost), bind(DOM_REFLECT_PROPERTIES_AS_ATTRIBUTES).toValue(false), ProtoViewFactory, AppViewPool, AppViewManager, AppViewManagerUtils, Serializer, ELEMENT_PROBE_CONFIG, bind(APP_VIEW_POOL_CAPACITY).toValue(500), Compiler, CompilerCache, bind(ViewResolver).toClass(MockViewResolver), bind(Pipes).toValue(defaultPipes), bind(IterableDiffers).toValue(defaultIterableDiffers), bind(KeyValueDiffers).toValue(defaultKeyValueDiffers), bind(ChangeDetection).toClass(DynamicChangeDetection), Log, ViewLoader, DynamicComponentLoader, DirectiveResolver, Parser, Lexer, bind(ExceptionHandler).toValue(new ExceptionHandler(DOM)), bind(LocationStrategy).toClass(MockLocationStrategy), bind(XHR).toClass(MockXHR), ComponentUrlMapper, UrlResolver, AnchorBasedAppRootUrl, bind(AppRootUrl).toAlias(AnchorBasedAppRootUrl), StyleUrlResolver, StyleInliner, TestComponentBuilder, bind(NgZone).toClass(MockNgZone), bind(EventManager).toFactory((function(zone) {
       var plugins = [new DomEventsPlugin()];
       return new EventManager(plugins, zone);
     }), [NgZone])];
@@ -1770,6 +1814,10 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
       DynamicChangeDetection = $__m.DynamicChangeDetection;
       Pipes = $__m.Pipes;
       defaultPipes = $__m.defaultPipes;
+      IterableDiffers = $__m.IterableDiffers;
+      defaultIterableDiffers = $__m.defaultIterableDiffers;
+      KeyValueDiffers = $__m.KeyValueDiffers;
+      defaultKeyValueDiffers = $__m.defaultKeyValueDiffers;
     }, function($__m) {
       ExceptionHandler = $__m.ExceptionHandler;
     }, function($__m) {
@@ -1839,6 +1887,12 @@ System.register("angular2/src/test_lib/test_injector", ["angular2/di", "angular2
       APP_ID_TOKEN = $__m.APP_ID_TOKEN;
       SharedStylesHost = $__m.SharedStylesHost;
       DomSharedStylesHost = $__m.DomSharedStylesHost;
+      MAX_IN_MEMORY_ELEMENTS_PER_TEMPLATE_TOKEN = $__m.MAX_IN_MEMORY_ELEMENTS_PER_TEMPLATE_TOKEN;
+      TemplateCloner = $__m.TemplateCloner;
+    }, function($__m) {
+      ElementSchemaRegistry = $__m.ElementSchemaRegistry;
+    }, function($__m) {
+      DomElementSchemaRegistry = $__m.DomElementSchemaRegistry;
     }, function($__m) {
       Serializer = $__m.Serializer;
     }, function($__m) {
@@ -1890,7 +1944,11 @@ System.register("angular2/src/test_lib/test_lib", ["angular2/src/dom/dom_adapter
       testBindings,
       BeforeEachRunner,
       SpyObject;
-  function proxy() {}
+  function proxy() {
+    return (function(t) {
+      return t;
+    });
+  }
   function _describe(jsmFn) {
     for (var args = [],
         $__1 = 1; $__1 < arguments.length; $__1++)
